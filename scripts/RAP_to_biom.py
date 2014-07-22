@@ -22,6 +22,7 @@ from collections import defaultdict
 from os import path,listdir
 from os.path import isdir,splitext,exists
 from biom.table import table_factory,SparseOTUTable
+from numpy import zeros
 
 script_info = {}
 script_info['brief_description'] = "This script reads a list of gi numbers (each can appear more than once), and generates a BIOM table based on NCBI taxonomy"
@@ -60,7 +61,7 @@ def make_header_map(header_line):
     return header_map
 
 def biom_table_from_blast_results(lines,
-  sample_column_name='sampleid',observation_column_name='gi',\
+  sample_column_name='sampleid',observation_column_name='taxid',\
   metadata_cols=['taxonomy'],delimiter="\t"):
     """Build a BIOM table object from a tab-delimited file with observation, 
     sample, and 1+ metadata columns
@@ -74,7 +75,7 @@ def biom_table_from_blast_results(lines,
     #Need to have BLAST lines already annotated with sample id and taxonomy
     #Step 1. 1st pass create a set of sample ids and observation ids 
     
-    sample_ids,observation_ids,metadata =\
+    sample_ids,observation_ids,observation_metadata =\
       biom_data_from_blast_results(lines,sample_column_name,\
       observation_column_name)
     
@@ -83,28 +84,63 @@ def biom_table_from_blast_results(lines,
     
     sample_map = {sample_id:i for i,sample_id in enumerate(unique_sample_ids)}
     observation_map = {observation_id:i for i,observation_id in enumerate(unique_observation_ids)}
-    data = defaultdict(int)
-    
+    data_as_dict = defaultdict(int)
+      
     for sample_id,observation_id in zip(sample_ids,observation_ids):
-        data[(sample_map[sample_id],observation_map[observation_id])] += 1
-    print "input data to table_factory:"
-    print "observation_ids:",observation_ids[0:10]
-    print "sample_ids:",sample_ids[0:5]
-    print "metadata:",metadata
-    data_as_dict = dict(data)
-    result = table_factory(observation_ids,sample_ids,\
-      data_as_dict,metadata=[],constructor=SparseOTUTable)
+        data_as_dict[(observation_map[observation_id],sample_map[sample_id])] += 1
     
+    data_array = array_from_dict(data_as_dict)
+    print "Obs length:",len(observation_metadata)
+    print "Data.shape:",data_array.shape
+    print "Contruting biom table..."
+    result = table_factory(data_array,unique_sample_ids,\
+      unique_observation_ids,\
+      constructor=SparseOTUTable)
+
+    print "Adding observation metadata to biom table"
+    #Oddly, the table_factory constructor in biom doesn't accept dict
+    #input, so observation metadata is added as a separate method call
+    
+    observation_metadata_fields =\
+      split_taxonomy_dict_on_semicolons(observation_metadata)
+    
+    result.addObservationMetadata(observation_metadata_fields)
+    return result
+
+def split_taxonomy_dict_on_semicolons(taxonomy_dict,target_md_field="taxonomy"):
+    """Return a list of stripped entries produced by splitting taxa_string on semicolons"""
+    result = defaultdict(dict)
+    #Keys are typically observation_ids
+    #Values are dicts of metadata taxonomy strings
+
+    #Split each value on semicolons and strip 
+    #to generate a dict of lists
+    for k,v in taxonomy_dict.iteritems():
+        fields = v[target_md_field].split(';')
+        result[k][target_md_field]=[f.strip().replace(" ","_") for f in fields]
+    return dict(result)
+
+def array_from_dict(sparse_dict):
+    """Convert a dict of {(row,col):value} to a dense array"""
+    #The size of the array should be one larger
+    #than the largest index
+    N = max(r for r,c in sparse_dict.iterkeys())+1
+    M = max(c for r,c in sparse_dict.iterkeys())+1
+
+    result = zeros((N,M))
+    for coords,counts in sparse_dict.iteritems():
+        row,col = coords
+        result[row][col]=counts
     return result
 
 def biom_data_from_blast_results(lines,\
-  sample_column_name='sampleid',observation_column_name='gi',metadata_cols=['taxonomy']):    
+  sample_column_name='sampleid',observation_column_name='taxid',metadata_cols=['taxonomy']):    
     """Retrieve sample ids, observations and metadata from blast or RAP result lines""" 
     
     
     sample_ids = []
     observation_ids = []
-    metadata=[]  
+    metadata={} 
     header_line,header_map,data_fields = parse_blast_lines(lines,strict=True) 
     sample_idx = header_map[sample_column_name]
     observation_idx = header_map[observation_column_name]
@@ -128,16 +164,16 @@ def biom_data_from_blast_results(lines,\
         #Build a dict of metadata for this row only
         curr_metadata = {}
         for metadata_label,i in metadata_indices:
-            print "metadata_label:",metadata_label
-            print "i:",i
-            print "fields:",fields
-            print "len(fields):",len(fields)
             metadata_field = fields[i]
             curr_metadata[metadata_label]=metadata_field
         
-        #Then add it to the ordered list of
-        #metadata per observation_id
-        metadata.append(curr_metadata)
+        #If an observation id occurs more than once,
+        #we simply overwrite the metadata.
+        #All observation metadata *should* be identical for 
+        #each instance of the same observation id.
+        #It is presently the responsibility of the user
+        #to ensure this is the case (no check is performed)
+        metadata[observation_id]=curr_metadata
     print "Metadata returned by biom_table_from_blast_lines:",metadata  
     return sample_ids,observation_ids,metadata
  
@@ -439,7 +475,7 @@ def filter_and_merge_RAP_search_files(input_dir):
     #TODO: abstract step 1 here
     pass
 
-def __main():
+def main():
     option_parser, opts, args =\
        parse_command_line_parameters(**script_info)
 
@@ -564,16 +600,19 @@ def __main():
     #Because the gi->taxid files are very very large,
     #first create a set of relevant gis, then build a 
     #map for only those
-
-    gi_to_taxid_map = map_from_delimited_file(open(opts.gi_to_taxid_file,"U"),limit_keys_to = relevant_gis)
-    print "Length of gi to taxid map:",len(gi_to_taxid_map)
-    print "Example keys:",gi_to_taxid_map.values()[0:10]
+    
+    with open(opts.gi_to_taxid_file,"U") as f:
+        gi_to_taxid_map = map_from_delimited_file(f,\
+          limit_keys_to = relevant_gis)
+    
     if opts.verbose:
         print "Done"
         print "Adding Taxonomy to BLAST results"
 
     best_hit_blast_lines = open(output_dir+"/best_hits.txt","U")
-    header_line,header_map,annotated_blast_lines = add_taxonomy_to_blast_results(best_hit_blast_lines,\
+    
+    header_line,header_map,annotated_blast_lines =\
+      add_taxonomy_to_blast_results(best_hit_blast_lines,\
       ncbi_taxonomy_tree,gi_to_taxid_map)
    
     results_with_taxonomy_file = open(output_dir+"/best_hits_with_taxonomy","w")
@@ -584,23 +623,16 @@ def __main():
     results_with_taxonomy_file.close()
     best_hit_blast_lines.close()
 
-def main():
-    option_parser, opts, args =\
-       parse_command_line_parameters(**script_info)
-    output_dir = opts.output
-
     #Step 4 build an actual BIOM table
-    f = open(output_dir+"/best_hits_with_taxonomy","U")
-    for i,line in enumerate(f):
-        if i < 10:
-            print "line:",line
-            print "line.strip().split(tab):",line.strip().split("\t")
-    f.close()
-    f = open(output_dir+"/best_hits_with_taxonomy","U")
-    result_biom_table = biom_table_from_blast_results(f)
     
-    #BIOM output file
-    otu_table_fp = open(output_dir+"/otu_table.biom")
+    with open(output_dir+"/best_hits_with_taxonomy","U") as f:
+        result_biom_table = biom_table_from_blast_results(f)
+    
+    #Write BIOM output file to disk in JSON format
+    with open(output_dir+"/otu_table.biom","w") as f:
+        f.write(result_biom_table.getBiomFormatJsonString(generated_by=\
+        "Viroscape version %s"%__version__))
+
     print "OTU table methods:",dir(result_biom_table)
     #Read in a file of blast results annotated with columns for taxid,sampleid
     #Numpy data matrix format: (observation,sample)
