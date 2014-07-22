@@ -14,7 +14,8 @@ __status__ = "Development"
 from numpy import array
 from cogent.util.unit_test import TestCase, main
 from biom.table import DenseTable
-from RAP_to_biom import biom_table_from_blast_results,parse_blast_lines,array_from_dict
+from RAP_to_biom import biom_table_from_blast_results,parse_blast_lines,\
+  array_from_dict,split_taxonomy_dict_on_semicolons
 
 class RAPToBIOMTests(TestCase):
     """ """
@@ -36,13 +37,23 @@ class RAPToBIOMTests(TestCase):
         input_data = self.rap_result_with_taxonomy
         obs = biom_table_from_blast_results(input_data)
         print "obs:",obs
-    def test_array_from_dict(self):
+    
+    def test_array_from_dict_valid_input(self):
         """array_from_dict should convert sampleid,observation_id paris to a dict"""
         input_data = {(1,3):10,(2,3):5,(0,0):1}
         obs = array_from_dict(input_data)
         exp = array([[1,0,0,0],[0,0,0,10],[0,0,0,5]])
         self.assertEqual(obs,exp)
 
+    def split_taxonomy_dict_on_semicolons_valid_input(self):
+        """split_taxonomy_dict_on_semicolons functions with valid input"""
+        input_data ={\
+          "obs_id1":{'taxonomy': 'Eukaryota    ;Metazoa;Chordata  ;Mammalia;Chiroptera;Vespertilionidae;Scotophilus;Scotophilus kuhlii','other_metadata':"don't;split;this"},\
+          "obs_id2":{'taxonomy':"Eukaryota;Metazoa;Chordata;Aves;Anseriformes;Anatidae;Cairina;Cairina moschata",'other_metadata':"don't;split;this;either"}}
+
+        obs = split_taxonomy_dict_on_semicolons(input_data)
+        exp = {"obs_id1":{'taxonomy':['Eukaryota','Metazoa','Chordata','Mammalia','Chiroptera','Vespertilionidae','Scotophilus','Scotophilus kuhlii'],'other_metadata':"don't;split;this"},"obs_id2":{'taxonomy': ['Eukaryota','Metazoa','Chordata','Aves','Anseriformes','Anatidae','Cairina','Cairina moschata'],'other_metadata':"don't;split;this;either"}}
+        self.assertEqualItems(obs,exp)
 RAP_HEADER_WITH_TAXONOMY = "\t".join(["# Fields:","Query","Subject","identity","aln-len","mismatch","gap-openings","q.start","q.end","s.start","s.end","log(e-value)","bit-score","sampleid","gi","taxid","taxonomy"])
 
 RAP_DATA_LINES_WITH_TAXONOMY = [\
