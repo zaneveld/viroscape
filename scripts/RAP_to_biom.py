@@ -22,6 +22,7 @@ from collections import defaultdict
 from os import path,listdir
 from os.path import isdir,splitext,exists
 from biom.table import table_factory,SparseOTUTable
+from numpy import zeros
 
 script_info = {}
 script_info['brief_description'] = "This script reads a list of gi numbers (each can appear more than once), and generates a BIOM table based on NCBI taxonomy"
@@ -83,18 +84,30 @@ def biom_table_from_blast_results(lines,
     
     sample_map = {sample_id:i for i,sample_id in enumerate(unique_sample_ids)}
     observation_map = {observation_id:i for i,observation_id in enumerate(unique_observation_ids)}
-    data = defaultdict(int)
-    
+    data_as_dict = defaultdict(int)
+      
     for sample_id,observation_id in zip(sample_ids,observation_ids):
-        data[(sample_map[sample_id],observation_map[observation_id])] += 1
-    print "input data to table_factory:"
-    print "observation_ids:",observation_ids[0:10]
-    print "sample_ids:",sample_ids[0:5]
-    print "metadata:",metadata
-    data_as_dict = dict(data)
-    result = table_factory(observation_ids,sample_ids,\
-      data_as_dict,metadata=[],constructor=SparseOTUTable)
+        data_as_dict[(observation_map[observation_id],sample_map[sample_id])] += 1
     
+    data_array = array_from_dict(data_as_dict)
+    
+    result = table_factory(data_array,unique_sample_ids,\
+      unique_observation_ids,observation_metadata=metadata,\
+      constructor=SparseOTUTable)
+    
+    return result
+
+def array_from_dict(sparse_dict):
+    """Convert a dict of {(row,col):value} to a dense array"""
+    #The size of the array should be one larger
+    #than the largest index
+    N = max(r for r,c in sparse_dict.iterkeys())+1
+    M = max(c for r,c in sparse_dict.iterkeys())+1
+
+    result = zeros((N,M))
+    for coords,counts in sparse_dict.iteritems():
+        row,col = coords
+        result[row][col]=counts
     return result
 
 def biom_data_from_blast_results(lines,\
@@ -128,10 +141,6 @@ def biom_data_from_blast_results(lines,\
         #Build a dict of metadata for this row only
         curr_metadata = {}
         for metadata_label,i in metadata_indices:
-            print "metadata_label:",metadata_label
-            print "i:",i
-            print "fields:",fields
-            print "len(fields):",len(fields)
             metadata_field = fields[i]
             curr_metadata[metadata_label]=metadata_field
         
