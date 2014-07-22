@@ -61,7 +61,7 @@ def make_header_map(header_line):
     return header_map
 
 def biom_table_from_blast_results(lines,
-  sample_column_name='sampleid',observation_column_name='gi',\
+  sample_column_name='sampleid',observation_column_name='taxid',\
   metadata_cols=['taxonomy'],delimiter="\t"):
     """Build a BIOM table object from a tab-delimited file with observation, 
     sample, and 1+ metadata columns
