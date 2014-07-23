@@ -14,29 +14,31 @@ __status__ = "Development"
 from numpy import array
 from cogent.util.unit_test import TestCase, main
 from biom.table import DenseTable
-from RAP_to_biom import biom_table_from_blast_results,parse_blast_lines,\
+from RAP_to_biom import biom_table_from_blast_results,\
   array_from_dict,split_taxonomy_dict_on_semicolons
 
 class RAPToBIOMTests(TestCase):
     """ """
     
     def setUp(self):
-        #Datasets for metagenome prediction
         self.rap_result_with_taxonomy =\
           [RAP_HEADER_WITH_TAXONOMY]
+        
         self.rap_result_with_taxonomy.extend(RAP_DATA_LINES_WITH_TAXONOMY)
-         
-    def test_parse_blast_lines_valid_input(self):
-        """parse_blast_lines functions with valid input"""
-        input_data = self.rap_result_with_taxonomy
-        obs = parse_blast_lines(input_data)
-        print "RESULT:",obs
+        
+        self.exp_biom_table_from_rap_with_taxonomy =\
+          EXP_BIOM_TABLE_RAP_LINES_WITH_TAXONOMY         
     
     def test_biom_table_from_blast_results_valid_input(self):
         """biom_table_from_blast_results functions as expected with valid input """
         input_data = self.rap_result_with_taxonomy
         obs = biom_table_from_blast_results(input_data)
-        print "obs:",obs
+        
+        obs_delimited=\
+          obs.delimitedSelf(header_key="taxonomy",header_value="taxonomy")
+        
+        exp = self.exp_biom_table_from_rap_with_taxonomy
+        self.assertEqual(obs_delimited,exp)    
     
     def test_array_from_dict_valid_input(self):
         """array_from_dict should convert sampleid,observation_id paris to a dict"""
@@ -54,6 +56,14 @@ class RAPToBIOMTests(TestCase):
         obs = split_taxonomy_dict_on_semicolons(input_data)
         exp = {"obs_id1":{'taxonomy':['Eukaryota','Metazoa','Chordata','Mammalia','Chiroptera','Vespertilionidae','Scotophilus','Scotophilus kuhlii'],'other_metadata':"don't;split;this"},"obs_id2":{'taxonomy': ['Eukaryota','Metazoa','Chordata','Aves','Anseriformes','Anatidae','Cairina','Cairina moschata'],'other_metadata':"don't;split;this;either"}}
         self.assertEqualItems(obs,exp)
+
+EXP_BIOM_TABLE_RAP_LINES_WITH_TAXONOMY =\
+"""# Constructed from biom file\n#OTU ID\tlane7-index02-CGATGT-N3.txt_filtered\tlane7-index03-TTAGGC-N4.txt_filtered\ttaxonomy
+11866\t1.0\t1.0\t['Viruses', 'Unknown', 'Unknown', 'Unknown', 'Unknown', 'Retroviridae', 'Alpharetrovirus', 'Avian_myeloblastosis_virus']
+32630\t1.0\t0.0\t['Unknown', 'Unknown', 'Unknown', 'Unknown', 'Unknown', 'Unknown', 'Unknown', 'synthetic___construct']
+9598\t1.0\t0.0\t['Eukaryota', 'Metazoa', 'Chordata', 'Mammalia', 'Primates', 'Hominidae', 'Pan', 'Pan_troglodytes']
+9606\t0.0\t1.0\t['Eukaryota', 'Metazoa', 'Chordata', 'Mammalia', 'Primates', 'Hominidae', 'Homo', 'Homo_sapiens']"""
+
 RAP_HEADER_WITH_TAXONOMY = "\t".join(["# Fields:","Query","Subject","identity","aln-len","mismatch","gap-openings","q.start","q.end","s.start","s.end","log(e-value)","bit-score","sampleid","gi","taxid","taxonomy"])
 
 RAP_DATA_LINES_WITH_TAXONOMY = [\
