@@ -14,7 +14,8 @@ __status__ = "Development"
 from numpy import array
 from cogent.util.unit_test import TestCase, main
 from biom.table import DenseTable
-from viroscape.parse import parse_delimited_data_lines
+from viroscape.parse import parse_delimited_data_lines,\
+  parse_similarity_search_lines
 
 class ParseTests(TestCase):
     """Test code for viroscape/parse.py """
@@ -34,8 +35,33 @@ class ParseTests(TestCase):
         exp = self.rap_data_fields_with_taxonomy
         self.assertEqualItems(obs,exp)
     
+    def test_parse_similarity_search_lines_valid_input(self):
 
-    
+        #Test an example RAP search result with added cols in data and header
+        input_data = self.rap_result_with_taxonomy
+        
+        obs_header_line,obs_header_map,obs_data_generator =\
+          parse_similarity_search_lines(input_data)
+        
+        #Test the results
+        self.assertEqual(obs_header_line,RAP_HEADER_WITH_TAXONOMY)
+        
+        exp_header_map={"Query":0,"Subject":1,"identity":2,"aln-len":3,"mismatch":4,
+          "gap-openings":5,"q.start":6,"q.end":7,"s.start":8,"s.end":9,"log(e-value)":10,
+          "bit-score":11,"sampleid":12,"gi":13,"taxid":14,"taxonomy":15}
+        self.assertEqualItems(obs_header_map,exp_header_map)
+
+        obs_fields = [f for f in obs_data_generator]
+        self.assertEqual(obs_fields,self.rap_data_fields_with_taxonomy)
+
+    def test_parse_similarity_search_lines_raises_if_no_header_and_strict(self):
+        """parse_similarity_search_lines raises ValueError if header is missing"""
+        input_data = RAP_DATA_LINES_WITH_TAXONOMY #has no header
+        self.assertRaises(ValueError,\
+          parse_similarity_search_lines,input_data,strict=True)
+
+          
+    #Source data for test examples
 
 RAP_HEADER_WITH_TAXONOMY = "\t".join(["# Fields:","Query","Subject","identity","aln-len","mismatch","gap-openings","q.start","q.end","s.start","s.end","log(e-value)","bit-score","sampleid","gi","taxid","taxonomy"])
 
