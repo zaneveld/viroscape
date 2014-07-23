@@ -24,6 +24,8 @@ from os.path import isdir,splitext,exists
 from biom.table import table_factory,SparseOTUTable
 from numpy import zeros
 
+from viroscape.parse import parse_delimited_data_lines,parse_similarity_search_lines,parse_gi_from_subject_id,make_header_map
+
 script_info = {}
 script_info['brief_description'] = "This script reads a list of gi numbers (each can appear more than once), and generates a BIOM table based on NCBI taxonomy"
 script_info['script_description'] = "For each query sequence"
@@ -49,16 +51,6 @@ script_info['optional_options']=[
 
 ]
 script_info['version'] = __version__
-
-
-def make_header_map(header_line):
-    """Yield a dict mapping fields to headers""" 
-    # Fields: Query Subject identity    aln-len mismatch    gap-openings    q.start q.end   s.start s.end   log(e-value)    bit-score 
-    if not header_line.startswith("# Fields:"):
-        raise ValueError("Results header line must look like this:\n # Fields: Query Subject identity    aln-len mismatch    gap-openings    q.start q.end   s.start s.end   log(e-value)    bit-score")
-    header_line = header_line.lstrip("# Fields:").strip()
-    header_map = {key:idx for idx,key in enumerate(header_line.split("\t"))}
-    return header_map
 
 def biom_table_from_blast_results(lines,
   sample_column_name='sampleid',observation_column_name='taxid',\
@@ -141,7 +133,8 @@ def biom_data_from_blast_results(lines,\
     sample_ids = []
     observation_ids = []
     metadata={} 
-    header_line,header_map,data_fields = parse_blast_lines(lines,strict=True) 
+    header_line,header_map,data_fields =\
+      parse_similarity_search_lines(lines,strict=True) 
     sample_idx = header_map[sample_column_name]
     observation_idx = header_map[observation_column_name]
     metadata_indices = [(m,header_map[m]) for m in metadata_cols]
@@ -177,63 +170,12 @@ def biom_data_from_blast_results(lines,\
     print "Metadata returned by biom_table_from_blast_lines:",metadata  
     return sample_ids,observation_ids,metadata
  
-
-def parse_blast_lines(lines,strict=False):
-    #First parse comment lines to find a header
-    header_map = None
-    header_line = None
-    for i,line in enumerate(lines):
-        #Header line must be the first line
-        if line.startswith("# Fields:"):
-            header_line = line
-            header_map = make_header_map(header_line)
-            break
-        elif line.startswith("#"):
-            #Skip other comment lines
-            continue
-        elif header_map is None and strict:
-            #We must be in a data line, but never
-            #founda  header.  Raise an error
-            raise ValueError("Never found a header line starting with '# Fields:'")
-        elif header_map is None and not strict:
-            #Just assume defautl RAP fileds
-            header_line =\
-              "# Fields:Query\tSubject\tidentity\taln-len\tmismatch\tgap-openings\tq.start\tq.end\ts.start\ts.end\tlog(e-value)\tbit-score\n"
-            
-            header_map = make_header_map(header_line)
-            print "Assuming the following header map:",header_map
-            break 
-    #Next parse actual data lines
-    data_fields = parse_blast_data_lines(lines,header_map)
-    return header_line,header_map,data_fields
-
-def parse_blast_data_lines(data_lines,header_map):
-    for line in data_lines:
-        
-        if line.startswith("#"):
-            continue
-
-        if not line.strip():
-            continue
-        
-        fields = line.strip().split("\t")
-        yield fields
-
-def parse_gi_from_subject_id(subject_id):
-    """Parse a numerical gi from a subject id of the form: gi|148686800|gb|EDL18747.1|"""
-    fields = subject_id.split("|")
-    for i in xrange(0,len(fields),2):
-        paired_data = fields[i:i+2]
-        database_name,identifier = paired_data
-        if database_name == 'gi':
-            return identifier
-    
         
 
 def best_RAP_results(lines,limit_to_sampleid=False,large_e_value=10000.0):
     """Return a dictionary of field indices, and a dict of the best RAP results by query"""
     
-    header_line,header_map,blast_results=parse_blast_lines(lines)
+    header_line,header_map,blast_results=parse_similarity_search_lines(lines)
     
     #If filtering by sampleid, make sure its present
     if 'sampleid' not in header_map.keys():
@@ -286,7 +228,8 @@ def filter_RAP_results(lines,max_e_val,min_percent_aligned, gi_only=False,\
     add_sampleid=False, include_header=True):    
     """Filter RAP search (m8 format) results, yielding results"""
     #blast_results = MinimalBlastParser9(input_file)
-    header_line,header_map,blast_results = parse_blast_lines(lines)
+    header_line,header_map,blast_results =\
+      parse_similarity_search_lines(lines)
     
     
     if add_sampleid:
@@ -349,7 +292,8 @@ def add_taxonomy_to_blast_results(lines,ncbi_taxonomy_tree,gi_to_taxid_mapping):
     """
     #The Subject field will always be in the same column
     #Look up ahead of time which column that is
-    header_line,header_map,blast_result = parse_blast_lines(lines) 
+    header_line,header_map,blast_result =\
+      parse_similarity_search_lines(lines) 
 
     #Make a generator object that will yield parsed BLAST results 
     results_iterator =\
@@ -389,7 +333,8 @@ def yield_blast_results_with_taxonomy(results,header_map,ncbi_taxonomy_tree,gi_t
     
 def gis_from_blast_lines(lines):
     """Extract subject gi numbers from blast results"""
-    header_line,header_map,blast_result = parse_blast_lines(lines)
+    header_line,header_map,blast_result =\
+      parse_similarity_search_lines(lines)
     print header_line,header_map,blast_result
     all_gis = set()
     for fields in blast_result:
