@@ -94,4 +94,14 @@ def make_header_map(header_line):
     header_map = {key:idx for idx,key in enumerate(header_line.split("\t"))}
     return header_map
 
-
+def gis_from_blast_lines(lines):
+    """Extract subject gi numbers from blast results"""
+    header_line,header_map,blast_result =\
+      parse_similarity_search_lines(lines)
+    print header_line,header_map,blast_result
+    all_gis = set()
+    for fields in blast_result:
+        subject = fields[header_map["Subject"]]
+        all_gis.add(parse_gi_from_subject_id(subject))
+    print "gis_from_blast_lines: number of gis:",len(all_gis)
+    return all_gis
