@@ -14,7 +14,7 @@ __status__ = "Development"
 from numpy import array
 from cogent.util.unit_test import TestCase, main
 from biom.table import DenseTable
-from taxonomy import biom_table_from_blast_results,split_taxonomy_dict_on_semicolons
+from viroscape.taxonomy import split_taxonomy_dict_on_semicolons
 
 class TaxonomyTests(TestCase):
     """ """
