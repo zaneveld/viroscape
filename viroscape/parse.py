@@ -93,3 +93,5 @@ def make_header_map(header_line):
     header_line = header_line.lstrip("# Fields:").strip()
     header_map = {key:idx for idx,key in enumerate(header_line.split("\t"))}
     return header_map
+
+
