@@ -14,10 +14,9 @@ __status__ = "Development"
 from numpy import array
 from cogent.util.unit_test import TestCase, main
 from biom.table import DenseTable
-from RAP_to_biom import biom_table_from_blast_results,\
-  array_from_dict,split_taxonomy_dict_on_semicolons
+from viroscape.taxonomy import split_taxonomy_dict_on_semicolons
 
-class RAPToBIOMTests(TestCase):
+class TaxonomyTests(TestCase):
     """ """
     
     def setUp(self):
@@ -29,25 +28,15 @@ class RAPToBIOMTests(TestCase):
         self.exp_biom_table_from_rap_with_taxonomy =\
           EXP_BIOM_TABLE_RAP_LINES_WITH_TAXONOMY         
     
-    def test_biom_table_from_blast_results_valid_input(self):
-        """biom_table_from_blast_results functions as expected with valid input """
-        input_data = self.rap_result_with_taxonomy
-        obs = biom_table_from_blast_results(input_data)
-        
-        obs_delimited=\
-          obs.delimitedSelf(header_key="taxonomy",header_value="taxonomy")
-        
-        exp = self.exp_biom_table_from_rap_with_taxonomy
-        self.assertEqual(obs_delimited,exp)    
-    
-    def test_array_from_dict_valid_input(self):
-        """array_from_dict should convert sampleid,observation_id paris to a dict"""
-        input_data = {(1,3):10,(2,3):5,(0,0):1}
-        obs = array_from_dict(input_data)
-        exp = array([[1,0,0,0],[0,0,0,10],[0,0,0,5]])
-        self.assertEqual(obs,exp)
+    def split_taxonomy_dict_on_semicolons_valid_input(self):
+        """split_taxonomy_dict_on_semicolons functions with valid input"""
+        input_data ={\
+          "obs_id1":{'taxonomy': 'Eukaryota    ;Metazoa;Chordata  ;Mammalia;Chiroptera;Vespertilionidae;Scotophilus;Scotophilus kuhlii','other_metadata':"don't;split;this"},\
+          "obs_id2":{'taxonomy':"Eukaryota;Metazoa;Chordata;Aves;Anseriformes;Anatidae;Cairina;Cairina moschata",'other_metadata':"don't;split;this;either"}}
 
-
+        obs = split_taxonomy_dict_on_semicolons(input_data)
+        exp = {"obs_id1":{'taxonomy':['Eukaryota','Metazoa','Chordata','Mammalia','Chiroptera','Vespertilionidae','Scotophilus','Scotophilus kuhlii'],'other_metadata':"don't;split;this"},"obs_id2":{'taxonomy': ['Eukaryota','Metazoa','Chordata','Aves','Anseriformes','Anatidae','Cairina','Cairina moschata'],'other_metadata':"don't;split;this;either"}}
+        self.assertEqualItems(obs,exp)
 
 EXP_BIOM_TABLE_RAP_LINES_WITH_TAXONOMY =\
 """# Constructed from biom file\n#OTU ID\tlane7-index02-CGATGT-N3.txt_filtered\tlane7-index03-TTAGGC-N4.txt_filtered\ttaxonomy

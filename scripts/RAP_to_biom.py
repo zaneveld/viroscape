@@ -24,6 +24,12 @@ from os.path import isdir,splitext,exists
 from biom.table import table_factory,SparseOTUTable
 from numpy import zeros
 
+from viroscape.parse import parse_delimited_data_lines,parse_similarity_search_lines,\
+  parse_gi_from_subject_id,make_header_map,gis_from_blast_lines
+from viroscape.taxonomy import add_taxonomy_to_blast_results,\
+  split_taxonomy_dict_on_semicolons,get_lineage,get_lineage_from_taxid
+
+
 script_info = {}
 script_info['brief_description'] = "This script reads a list of gi numbers (each can appear more than once), and generates a BIOM table based on NCBI taxonomy"
 script_info['script_description'] = "For each query sequence"
@@ -49,16 +55,6 @@ script_info['optional_options']=[
 
 ]
 script_info['version'] = __version__
-
-
-def make_header_map(header_line):
-    """Yield a dict mapping fields to headers""" 
-    # Fields: Query Subject identity    aln-len mismatch    gap-openings    q.start q.end   s.start s.end   log(e-value)    bit-score 
-    if not header_line.startswith("# Fields:"):
-        raise ValueError("Results header line must look like this:\n # Fields: Query Subject identity    aln-len mismatch    gap-openings    q.start q.end   s.start s.end   log(e-value)    bit-score")
-    header_line = header_line.lstrip("# Fields:").strip()
-    header_map = {key:idx for idx,key in enumerate(header_line.split("\t"))}
-    return header_map
 
 def biom_table_from_blast_results(lines,
   sample_column_name='sampleid',observation_column_name='taxid',\
@@ -107,19 +103,6 @@ def biom_table_from_blast_results(lines,
     result.addObservationMetadata(observation_metadata_fields)
     return result
 
-def split_taxonomy_dict_on_semicolons(taxonomy_dict,target_md_field="taxonomy"):
-    """Return a list of stripped entries produced by splitting taxa_string on semicolons"""
-    result = defaultdict(dict)
-    #Keys are typically observation_ids
-    #Values are dicts of metadata taxonomy strings
-
-    #Split each value on semicolons and strip 
-    #to generate a dict of lists
-    for k,v in taxonomy_dict.iteritems():
-        fields = v[target_md_field].split(';')
-        result[k][target_md_field]=[f.strip().replace(" ","_") for f in fields]
-    return dict(result)
-
 def array_from_dict(sparse_dict):
     """Convert a dict of {(row,col):value} to a dense array"""
     #The size of the array should be one larger
@@ -141,7 +124,8 @@ def biom_data_from_blast_results(lines,\
     sample_ids = []
     observation_ids = []
     metadata={} 
-    header_line,header_map,data_fields = parse_blast_lines(lines,strict=True) 
+    header_line,header_map,data_fields =\
+      parse_similarity_search_lines(lines,strict=True) 
     sample_idx = header_map[sample_column_name]
     observation_idx = header_map[observation_column_name]
     metadata_indices = [(m,header_map[m]) for m in metadata_cols]
@@ -177,63 +161,12 @@ def biom_data_from_blast_results(lines,\
     print "Metadata returned by biom_table_from_blast_lines:",metadata  
     return sample_ids,observation_ids,metadata
  
-
-def parse_blast_lines(lines,strict=False):
-    #First parse comment lines to find a header
-    header_map = None
-    header_line = None
-    for i,line in enumerate(lines):
-        #Header line must be the first line
-        if line.startswith("# Fields:"):
-            header_line = line
-            header_map = make_header_map(header_line)
-            break
-        elif line.startswith("#"):
-            #Skip other comment lines
-            continue
-        elif header_map is None and strict:
-            #We must be in a data line, but never
-            #founda  header.  Raise an error
-            raise ValueError("Never found a header line starting with '# Fields:'")
-        elif header_map is None and not strict:
-            #Just assume defautl RAP fileds
-            header_line =\
-              "# Fields:Query\tSubject\tidentity\taln-len\tmismatch\tgap-openings\tq.start\tq.end\ts.start\ts.end\tlog(e-value)\tbit-score\n"
-            
-            header_map = make_header_map(header_line)
-            print "Assuming the following header map:",header_map
-            break 
-    #Next parse actual data lines
-    data_fields = parse_blast_data_lines(lines,header_map)
-    return header_line,header_map,data_fields
-
-def parse_blast_data_lines(data_lines,header_map):
-    for line in data_lines:
-        
-        if line.startswith("#"):
-            continue
-
-        if not line.strip():
-            continue
-        
-        fields = line.strip().split("\t")
-        yield fields
-
-def parse_gi_from_subject_id(subject_id):
-    """Parse a numerical gi from a subject id of the form: gi|148686800|gb|EDL18747.1|"""
-    fields = subject_id.split("|")
-    for i in xrange(0,len(fields),2):
-        paired_data = fields[i:i+2]
-        database_name,identifier = paired_data
-        if database_name == 'gi':
-            return identifier
-    
         
 
 def best_RAP_results(lines,limit_to_sampleid=False,large_e_value=10000.0):
     """Return a dictionary of field indices, and a dict of the best RAP results by query"""
     
-    header_line,header_map,blast_results=parse_blast_lines(lines)
+    header_line,header_map,blast_results=parse_similarity_search_lines(lines)
     
     #If filtering by sampleid, make sure its present
     if 'sampleid' not in header_map.keys():
@@ -286,7 +219,8 @@ def filter_RAP_results(lines,max_e_val,min_percent_aligned, gi_only=False,\
     add_sampleid=False, include_header=True):    
     """Filter RAP search (m8 format) results, yielding results"""
     #blast_results = MinimalBlastParser9(input_file)
-    header_line,header_map,blast_results = parse_blast_lines(lines)
+    header_line,header_map,blast_results =\
+      parse_similarity_search_lines(lines)
     
     
     if add_sampleid:
@@ -331,116 +265,6 @@ def filter_RAP_results(lines,max_e_val,min_percent_aligned, gi_only=False,\
         else:
             yield blast_result
         
-def add_taxonomy_to_blast_results(lines,ncbi_taxonomy_tree,gi_to_taxid_mapping):
-    """Output an annotated BLAST result with extra fields for taxid, and taxonomic lineage
-    lines -- blast of a similarity search result 
-       NOTE: the subject id is assumed to contain the gi in a format
-        like this: gi|148686800|gb|EDL18747.1|
-    
-    header_map -- a dictionary mapping the names of columns to their index
-    for example if column 0 is 'Query', header_map['Query']=0.
-    
-    ncbi_taxonomy_tree -- a PyCogent tree object representing the NCBI taxonomy tree
-      made with PyCogents NCBITaxonomyTreeFromFiles, and NCBI's nodes.dmp and names.dmp
-      files.
-    
-    gi_to_taxid_mapping -- a mapping between the relevant gis and taxids 
-     
-    """
-    #The Subject field will always be in the same column
-    #Look up ahead of time which column that is
-    header_line,header_map,blast_result = parse_blast_lines(lines) 
-
-    #Make a generator object that will yield parsed BLAST results 
-    results_iterator =\
-      yield_blast_results_with_taxonomy(blast_result,header_map,ncbi_taxonomy_tree,gi_to_taxid_mapping)
-    
-    #Update the header map and header line with new entries for 'gi','taxid',and 'taxonomy'
-    last_field_idx = max(header_map.values())
-    header_map["gi"] = last_field_idx +1
-    header_map["taxid"] = last_field_idx +2
-    header_map["taxonomy"] = last_field_idx +3
-    new_header_line = header_line.strip()
-    print "old header line:",header_line
-    new_header_line = "\t".join([new_header_line,"gi","taxid","taxonomy"])
-    print "new header line:",new_header_line
-    return new_header_line,header_map,results_iterator
-
-
-def yield_blast_results_with_taxonomy(results,header_map,ncbi_taxonomy_tree,gi_to_taxid_mapping):
-    subject_idx = header_map["Subject"]
-    assigned_gis = 0
-    unassigned_gis = 0
-    for fields in results:
-        last_field = len(fields)
-        subject_id = fields[subject_idx]  #
-        gi = parse_gi_from_subject_id(subject_id)
-        taxid = gi_to_taxid_mapping.get(gi,"Unknown")
-        if taxid == "Unknown":
-            unassigned_gis +=1
-            continue
-        else:
-            assigned_gis +=1
-        lineage = get_lineage_from_taxid(int(taxid.strip()),ncbi_taxonomy_tree)
-        fields.extend([f.strip() for f in [gi,taxid,lineage]])
-        yield fields     
-    print "total unassigned gis: %i" %unassigned_gis
-    print "total assigned gis: %i" %assigned_gis
-    
-def gis_from_blast_lines(lines):
-    """Extract subject gi numbers from blast results"""
-    header_line,header_map,blast_result = parse_blast_lines(lines)
-    print header_line,header_map,blast_result
-    all_gis = set()
-    for fields in blast_result:
-        subject = fields[header_map["Subject"]]
-        all_gis.add(parse_gi_from_subject_id(subject))
-    print "gis_from_blast_lines: number of gis:",len(all_gis)
-    return all_gis
-
-
-
-def get_lineage_from_taxid(taxid,ncbi_taxonomy_tree,ranks=\
-  ['superkingdom','kingdom','phylum','class','order','family','genus','species']):
-    """Return a lineage for a given taxid
-    taxid -- an NCBI taxon id as an integer
-    ncbi_taxonomy_tree -- a tree object for the NCBI taxonomy 
-      (from PyCogent's NcbiTaxonomyFromFiles)
-    
-    
-    """
-    try:
-        node = ncbi_taxonomy_tree.ById[taxid]
-    except KeyError:
-        #Couldn't find taxid in tree
-        print "Couldn't find taxid '%s' in taxonomy tree. Assigning 'Unknown'." %(taxid)
-        return ";".join(["Unknown"]*len(ranks))
-    lineage = get_lineage(node, ranks)
-    return lineage
-
-
-
-def get_lineage(node, ranks):
-    """Return a semicolon-delimited taxonomic lineage given a node and list of ranks
-
-    node -- a node object in the NCBI taxonomic tree
-    ranks -- a list of ranks to output. For example ["family","species"] 
-
-    """
-    #Make a dict of rank name by index in the list of ranks
-    ranks_lookup = dict([(r,idx) for idx,r in enumerate(ranks)])
-
-    #Start by setting all ranks to Unknown
-    lineage = ["Unknown"] * len(ranks)
-
-    curr = node
-    while curr.Parent is not None:
-        if curr.Rank in ranks_lookup:
-            lineage[ranks_lookup[curr.Rank]] = curr.Name
-        curr = curr.Parent
-
-    return ";".join(map(str,lineage))
-
 
 def map_from_delimited_file(lines,key_field_idx=0,value_field_idx=1,delimiter="\t",\
     limit_keys_to=None):
