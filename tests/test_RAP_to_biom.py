@@ -47,15 +47,7 @@ class RAPToBIOMTests(TestCase):
         exp = array([[1,0,0,0],[0,0,0,10],[0,0,0,5]])
         self.assertEqual(obs,exp)
 
-    def split_taxonomy_dict_on_semicolons_valid_input(self):
-        """split_taxonomy_dict_on_semicolons functions with valid input"""
-        input_data ={\
-          "obs_id1":{'taxonomy': 'Eukaryota    ;Metazoa;Chordata  ;Mammalia;Chiroptera;Vespertilionidae;Scotophilus;Scotophilus kuhlii','other_metadata':"don't;split;this"},\
-          "obs_id2":{'taxonomy':"Eukaryota;Metazoa;Chordata;Aves;Anseriformes;Anatidae;Cairina;Cairina moschata",'other_metadata':"don't;split;this;either"}}
 
-        obs = split_taxonomy_dict_on_semicolons(input_data)
-        exp = {"obs_id1":{'taxonomy':['Eukaryota','Metazoa','Chordata','Mammalia','Chiroptera','Vespertilionidae','Scotophilus','Scotophilus kuhlii'],'other_metadata':"don't;split;this"},"obs_id2":{'taxonomy': ['Eukaryota','Metazoa','Chordata','Aves','Anseriformes','Anatidae','Cairina','Cairina moschata'],'other_metadata':"don't;split;this;either"}}
-        self.assertEqualItems(obs,exp)
 
 EXP_BIOM_TABLE_RAP_LINES_WITH_TAXONOMY =\
 """# Constructed from biom file\n#OTU ID\tlane7-index02-CGATGT-N3.txt_filtered\tlane7-index03-TTAGGC-N4.txt_filtered\ttaxonomy
